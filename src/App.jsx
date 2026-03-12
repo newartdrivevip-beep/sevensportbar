@@ -34,47 +34,165 @@ const TABLE_PINS = {
   "16":"8364","17":"1975","18":"6403","19":"2891","20":"7152",
 };
 
-// ─── SHARED STATE ─────────────────────────────────────────────────────────────
-const DB = {
-  tables: Array.from({length:20},(_,i)=>({id:String(i+1),active:true})),
-  menu: [
-    {id:1,  name:"X-Burguer",      category:"Lanches",         price:18.9, emoji:"🍔",desc:"Pão, hambúrguer 150g, queijo, alface, tomate",          available:true},
-    {id:2,  name:"X-Bacon",        category:"Lanches",         price:22.9, emoji:"🥓",desc:"Pão, hambúrguer 150g, bacon crocante, queijo, molho",    available:true},
-    {id:3,  name:"X-Frango",       category:"Lanches",         price:19.9, emoji:"🍗",desc:"Pão, frango grelhado, queijo, alface, maionese",         available:true},
-    {id:4,  name:"X-Tudo",         category:"Lanches",         price:26.9, emoji:"⭐",desc:"Pão, 2 hambúrgueres, bacon, ovo, queijo, alface, tomate",available:true},
-    {id:5,  name:"Batata Frita P", category:"Acompanhamentos", price:8.9,  emoji:"🍟",desc:"Porção pequena de batatas crocantes",                    available:true},
-    {id:6,  name:"Batata Frita G", category:"Acompanhamentos", price:13.9, emoji:"🍟",desc:"Porção grande de batatas crocantes",                     available:true},
-    {id:7,  name:"Onion Rings",    category:"Acompanhamentos", price:12.9, emoji:"🧅",desc:"Anéis de cebola empanados crocantes",                    available:true},
-    {id:8,  name:"Coca-Cola Lata", category:"Bebidas",         price:6.9,  emoji:"🥤",desc:"350ml gelada",                                           available:true},
-    {id:9,  name:"Suco Natural",   category:"Bebidas",         price:9.9,  emoji:"🧃",desc:"Laranja, limão ou maracujá",                             available:true},
-    {id:10, name:"Água Mineral",   category:"Bebidas",         price:4.9,  emoji:"💧",desc:"500ml com ou sem gás",                                   available:true},
-    {id:11, name:"Milk Shake",     category:"Sobremesas",      price:16.9, emoji:"🥛",desc:"Chocolate, morango ou baunilha — 400ml",                 available:true},
-    {id:12, name:"Brownie",        category:"Sobremesas",      price:10.9, emoji:"🍫",desc:"Brownie quentinho com sorvete de creme",                 available:true},
-  ],
-  orders: [],
-  nextOrderId: 1,
-  nextMenuId: 13,
+// ─── FIREBASE CONFIG ──────────────────────────────────────────────────────────
+// 👇 COLE AQUI AS SUAS CREDENCIAIS DO FIREBASE (ver instruções abaixo)
+const FIREBASE_CONFIG = {
+  apiKey:            "AIzaSyCA8iWj8a9Cx1H71d2T7WtD8qpUgATwODE",
+  authDomain:        "sevensport-bar.firebaseapp.com",
+  databaseURL:       "https://sevensport-bar-default-rtdb.firebaseio.com",
+  projectId:         "sevensport-bar",
+  storageBucket:     "sevensport-bar.firebasestorage.app",
+  messagingSenderId: "358735414182",
+  appId:             "1:358735414182:web:cca6d43c019ef159b10567",
 };
-const listeners = new Set(), orderListeners = new Set();
+
+// ─── FIREBASE SDK (carregado via CDN) ────────────────────────────────────────
+let _db = null;
+let _fbReady = false;
+const _fbReadyCallbacks = [];
+
+function onFbReady(fn) { _fbReady ? fn(_db) : _fbReadyCallbacks.push(fn); }
+
+(async () => {
+  try {
+    const { initializeApp } = await import("https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js");
+    const { getDatabase, ref, set, get, push, update, onValue, child } =
+      await import("https://www.gstatic.com/firebasejs/10.12.0/firebase-database.js");
+    window._fbSDK = { ref, set, get, push, update, onValue, child };
+    const app = initializeApp(FIREBASE_CONFIG);
+    _db = getDatabase(app);
+    _fbReady = true;
+    _fbReadyCallbacks.forEach(fn => fn(_db));
+    _fbReadyCallbacks.length = 0;
+  } catch(e) {
+    console.error("Firebase falhou:", e);
+  }
+})();
+
+// ─── DEFAULT MENU ─────────────────────────────────────────────────────────────
+const DEFAULT_MENU = [
+  {id:1,  name:"X-Burguer",      category:"Lanches",         price:18.9, emoji:"🍔",desc:"Pão, hambúrguer 150g, queijo, alface, tomate",          available:true},
+  {id:2,  name:"X-Bacon",        category:"Lanches",         price:22.9, emoji:"🥓",desc:"Pão, hambúrguer 150g, bacon crocante, queijo, molho",    available:true},
+  {id:3,  name:"X-Frango",       category:"Lanches",         price:19.9, emoji:"🍗",desc:"Pão, frango grelhado, queijo, alface, maionese",         available:true},
+  {id:4,  name:"X-Tudo",         category:"Lanches",         price:26.9, emoji:"⭐",desc:"Pão, 2 hambúrgueres, bacon, ovo, queijo, alface, tomate",available:true},
+  {id:5,  name:"Batata Frita P", category:"Acompanhamentos", price:8.9,  emoji:"🍟",desc:"Porção pequena de batatas crocantes",                    available:true},
+  {id:6,  name:"Batata Frita G", category:"Acompanhamentos", price:13.9, emoji:"🍟",desc:"Porção grande de batatas crocantes",                     available:true},
+  {id:7,  name:"Onion Rings",    category:"Acompanhamentos", price:12.9, emoji:"🧅",desc:"Anéis de cebola empanados crocantes",                    available:true},
+  {id:8,  name:"Coca-Cola Lata", category:"Bebidas",         price:6.9,  emoji:"🥤",desc:"350ml gelada",                                           available:true},
+  {id:9,  name:"Suco Natural",   category:"Bebidas",         price:9.9,  emoji:"🧃",desc:"Laranja, limão ou maracujá",                             available:true},
+  {id:10, name:"Água Mineral",   category:"Bebidas",         price:4.9,  emoji:"💧",desc:"500ml com ou sem gás",                                   available:true},
+  {id:11, name:"Milk Shake",     category:"Sobremesas",      price:16.9, emoji:"🥛",desc:"Chocolate, morango ou baunilha — 400ml",                 available:true},
+  {id:12, name:"Brownie",        category:"Sobremesas",      price:10.9, emoji:"🍫",desc:"Brownie quentinho com sorvete de creme",                 available:true},
+];
+
+// ─── ESTADO REATIVO LOCAL (espelho do Firebase) ───────────────────────────────
+const STATE = {
+  orders: [],
+  menu: DEFAULT_MENU,
+  tables: Array.from({length:20},(_,i)=>({id:String(i+1),active:true})),
+};
+const listeners = new Set();
+const orderListeners = new Set();
 const notify = () => listeners.forEach(fn => fn());
 const notifyOrder = o => orderListeners.forEach(fn => fn(o));
 
+// ─── SINCRONIZAÇÃO EM TEMPO REAL ─────────────────────────────────────────────
+let _prevOrderIds = new Set();
+onFbReady((db) => {
+  const { ref, onValue } = window._fbSDK;
+
+  // Ouve pedidos em tempo real
+  onValue(ref(db, "orders"), (snap) => {
+    const val = snap.val() || {};
+    const arr = Object.values(val).map(o => ({...o, createdAt: new Date(o.createdAt)}));
+    arr.sort((a,b) => b.id - a.id);
+
+    // Detecta pedidos novos para tocar som na cozinha
+    arr.forEach(o => {
+      if (!_prevOrderIds.has(o.id) && _prevOrderIds.size > 0) notifyOrder(o);
+    });
+    _prevOrderIds = new Set(arr.map(o => o.id));
+
+    STATE.orders = arr;
+    notify();
+  });
+
+  // Ouve cardápio em tempo real
+  onValue(ref(db, "menu"), (snap) => {
+    const val = snap.val();
+    if (val) { STATE.menu = Object.values(val); notify(); }
+    else {
+      // Inicializa cardápio padrão se vazio
+      const { ref: r, set } = window._fbSDK;
+      const menuObj = {};
+      DEFAULT_MENU.forEach(m => { menuObj[m.id] = m; });
+      set(r(db, "menu"), menuObj);
+    }
+  });
+
+  // Ouve mesas em tempo real
+  onValue(ref(db, "tables"), (snap) => {
+    const val = snap.val();
+    if (val) { STATE.tables = Object.values(val); notify(); }
+    else {
+      const { ref: r, set } = window._fbSDK;
+      const tablesObj = {};
+      STATE.tables.forEach(t => { tablesObj[t.id] = t; });
+      set(r(db, "tables"), tablesObj);
+    }
+  });
+});
+
 function useDB() {
   const [,setT] = useState(0);
-  useEffect(()=>{const fn=()=>setT(t=>t+1);listeners.add(fn);return()=>listeners.delete(fn);},[]);
-  return DB;
+  useEffect(() => {
+    const fn = () => setT(t => t+1);
+    listeners.add(fn);
+    return () => listeners.delete(fn);
+  }, []);
+  return STATE;
 }
-function addOrder(items,table,name){
-  const o={id:DB.nextOrderId++,items,table,customerName:name,status:"novo",createdAt:new Date(),total:items.reduce((s,i)=>s+i.price*i.qty,0)};
-  DB.orders.unshift(o); notify(); notifyOrder(o); return o.id;
+
+async function addOrder(items, table, name) {
+  if (!_db) { alert("Sem conexão com o banco de dados. Verifique sua internet."); return; }
+  const { ref, get, set } = window._fbSDK;
+  // ID atômico via Firebase
+  const counterRef = ref(_db, "nextOrderId");
+  const snap = await get(counterRef);
+  const id = (snap.val() || 1);
+  await set(counterRef, id + 1);
+  const o = { id, items, table, customerName: name, status: "novo", createdAt: new Date().toISOString(), total: items.reduce((s,i) => s+i.price*i.qty, 0) };
+  await set(ref(_db, `orders/${id}`), o);
+  return id;
 }
-function updateOrderStatus(id,status){
-  const o=DB.orders.find(o=>o.id===id);
-  if(o){o.status=status;notify();if(status==="pronto")SFX.orderReady();else SFX.statusAdvance();}
+
+async function updateOrderStatus(id, status) {
+  if (!_db) return;
+  const { ref, update } = window._fbSDK;
+  await update(ref(_db, `orders/${id}`), { status });
+  if (status === "pronto") SFX.orderReady(); else SFX.statusAdvance();
 }
-function updateMenuItem(id,changes){const m=DB.menu.find(m=>m.id===id);if(m){Object.assign(m,changes);notify();}}
-function addMenuItem(item){DB.menu.push({...item,id:DB.nextMenuId++,available:true});notify();}
-function deleteMenuItem(id){const i=DB.menu.findIndex(m=>m.id===id);if(i>-1){DB.menu.splice(i,1);notify();}}
+
+async function updateMenuItem(id, changes) {
+  if (!_db) return;
+  const { ref, update } = window._fbSDK;
+  await update(ref(_db, `menu/${id}`), changes);
+}
+
+async function addMenuItem(item) {
+  if (!_db) return;
+  const { ref, get, set } = window._fbSDK;
+  const snap = await get(ref(_db, "nextMenuId"));
+  const id = (snap.val() || 13);
+  await set(ref(_db, "nextMenuId"), id + 1);
+  await set(ref(_db, `menu/${id}`), { ...item, id, available: true });
+}
+
+async function deleteMenuItem(id) {
+  if (!_db) return;
+  const { ref, set } = window._fbSDK;
+  await set(ref(_db, `menu/${id}`), null);
+}
 
 // ─── CONSTANTS ────────────────────────────────────────────────────────────────
 const SL = {novo:"Novo",preparando:"Preparando",pronto:"Pronto!",entregue:"Entregue"};
@@ -258,6 +376,13 @@ input,textarea,select{font-family:'Barlow',sans-serif}
 .order-actions{padding:10px 14px;display:flex;gap:8px;background:var(--green2)}
 .action-btn{flex:1;padding:10px;border-radius:8px;border:none;font-family:'Bebas Neue',sans-serif;font-size:14px;letter-spacing:.5px;cursor:pointer;transition:opacity .2s;text-transform:uppercase}
 .action-btn:hover{opacity:.82}
+.print-btn{padding:10px 12px;border-radius:8px;border:1px solid var(--border);background:transparent;color:var(--muted);cursor:pointer;font-size:16px;transition:all .2s;flex-shrink:0}
+.print-btn:hover{background:#fff1;color:#fff;border-color:#fff3}
+@media print{
+  body *{visibility:hidden}
+  #print-area,#print-area *{visibility:visible}
+  #print-area{position:fixed;top:0;left:0;width:80mm;padding:4mm;background:#fff;color:#000;font-family:monospace}
+}
 .empty-state{text-align:center;padding:56px 20px}
 .empty-state .ei{font-size:48px;margin-bottom:12px}
 .empty-state p{font-family:'Bebas Neue',sans-serif;font-size:20px;letter-spacing:1px;color:var(--green4)}
@@ -519,7 +644,13 @@ function CustomerView() {
 
   const addToCart = (item) => { SFX.addCart(); setCart(prev => { const ex = prev.find(i => i.id === item.id); if (ex) return prev.map(i => i.id === item.id ? {...i,qty:i.qty+1} : i); return [...prev,{...item,qty:1}]; }); };
   const changeQty = (id, d) => setCart(prev => prev.map(i => i.id===id ? {...i,qty:Math.max(0,i.qty+d)} : i).filter(i=>i.qty>0));
-  const confirm = () => { addOrder(cart, table, name); setCart([]); setCartOpen(false); setClientTab("pedidos"); };
+  const [sending, setSending] = useState(false);
+  const confirm = async () => {
+    setSending(true);
+    await addOrder(cart, table, name);
+    setCart([]); setCartOpen(false); setClientTab("pedidos");
+    setSending(false);
+  };
 
   return (
     <div className="customer">
@@ -602,14 +733,59 @@ function CustomerView() {
               onChange={e=>setName(e.target.value)}
               style={{borderColor: name.trim()===""?"#ff444455":""}}
             />
-            <button className="confirm-btn" onClick={confirm} disabled={cart.length===0||!name.trim()}>
-              Confirmar Pedido
+            <button className="confirm-btn" onClick={confirm} disabled={cart.length===0||!name.trim()||sending}>
+              {sending ? "Enviando..." : "Confirmar Pedido"}
             </button>
           </div>
         </div>
       )}
     </div>
   );
+}
+
+// ─── PRINT ORDER ─────────────────────────────────────────────────────────────
+function printOrder(order) {
+  const now = new Date();
+  const hora = now.toLocaleTimeString("pt-BR", {hour:"2-digit",minute:"2-digit"});
+  const data = now.toLocaleDateString("pt-BR");
+  const linhaH = "================================";
+  const linhaL = "--------------------------------";
+
+  const itens = order.items.map(i =>
+    `${String(i.qty).padEnd(3)}${i.name.padEnd(20).slice(0,20)} R$${(i.price*i.qty).toFixed(2).padStart(6)}`
+  ).join("\n");
+
+  const html = `
+    <div id="print-area" style="width:80mm;font-family:monospace;font-size:12px;color:#000;padding:4mm">
+      <div style="text-align:center;font-size:16px;font-weight:bold;margin-bottom:4px">SEVEN SPORT BAR</div>
+      <div style="text-align:center;font-size:11px;margin-bottom:8px">Pedido confirmado</div>
+      <div>${linhaH}</div>
+      <div style="display:flex;justify-content:space-between;margin:4px 0">
+        <span><b>Pedido #${order.id}</b></span>
+        <span>Mesa ${order.table}</span>
+      </div>
+      <div style="margin-bottom:4px">Cliente: ${order.customerName}</div>
+      <div style="font-size:10px;color:#555">${data} às ${hora}</div>
+      <div style="margin:6px 0">${linhaH}</div>
+      <div style="font-size:11px;margin-bottom:2px"><b>QTD ITEM                 VALOR</b></div>
+      <div>${linhaL}</div>
+      <pre style="font-size:11px;margin:4px 0;white-space:pre-wrap">${itens}</pre>
+      <div>${linhaL}</div>
+      <div style="display:flex;justify-content:space-between;font-size:14px;font-weight:bold;margin-top:6px">
+        <span>TOTAL</span>
+        <span>R$ ${order.total.toFixed(2)}</span>
+      </div>
+      <div style="margin:10px 0">${linhaH}</div>
+      <div style="text-align:center;font-size:10px">Obrigado pela preferência! 🤘</div>
+    </div>`;
+
+  const win = window.open("","_blank","width=400,height=600");
+  win.document.write(`<html><head><title>Pedido #${order.id}</title>
+    <style>body{margin:0;background:#fff}@media print{@page{margin:0;size:80mm auto}}</style>
+    </head><body>${html}
+    <script>window.onload=()=>{window.print();window.onafterprint=()=>window.close();}<\/script>
+    </body></html>`);
+  win.document.close();
 }
 
 // ─── KITCHEN VIEW ─────────────────────────────────────────────────────────────
@@ -666,6 +842,12 @@ function KitchenView({ view }) {
                   >
                     {SNL[order.status]}
                   </button>
+                  <button className="print-btn" title="Imprimir pedido" onClick={()=>printOrder(order)}>🖨️</button>
+                </div>
+              )}
+              {order.status === "pronto" && (
+                <div className="order-actions">
+                  <button className="print-btn" style={{flex:1,fontSize:13,fontFamily:"'Bebas Neue',sans-serif",letterSpacing:.5,color:"var(--gold)",borderColor:"var(--gold2)"}} onClick={()=>printOrder(order)}>🖨️ Imprimir Comprovante</button>
                 </div>
               )}
             </div>
@@ -794,7 +976,7 @@ function AdminView() {
                     {!t.active?"desativada":ao.length>0?`${ao.length} pedido${ao.length>1?"s":""}` :"livre"}
                   </div>
                   <div style={{display:"flex",justifyContent:"center"}}>
-                    <button className={`toggle ${t.active?"on":"off"}`} onClick={()=>{const i=DB.tables.findIndex(x=>x.id===t.id);if(i>-1){DB.tables[i].active=!DB.tables[i].active;notify();}}}/>
+                    <button className={`toggle ${t.active?"on":"off"}`} onClick={()=>{ if(_db){const{ref,update}=window._fbSDK;update(ref(_db,`tables/${t.id}`),{active:!t.active});}}}/>
                   </div>
                 </div>
               );
